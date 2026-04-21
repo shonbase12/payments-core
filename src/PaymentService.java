@@ -25,7 +25,7 @@ public class PaymentService {
     public PaymentResult processPayment(PaymentRequest request) {
         // Validate the payment request
         if (!isValidPaymentRequest(request)) {
-            log.error("Invalid payment request for ID: " + request.getIdempotencyKey());
+            log.error("Invalid payment request for ID: " + (request != null ? request.getIdempotencyKey() : "null"));
             throw new InvalidPaymentRequestException("Invalid payment request");
         }
 
@@ -53,7 +53,19 @@ public class PaymentService {
     }
 
     private boolean isValidPaymentRequest(PaymentRequest request) {
-        // Implement validation logic here (e.g., check for null fields)
-        return request != null && request.getIdempotencyKey() != null;
+        if (request == null) {
+            log.error("PaymentRequest is null");
+            return false;
+        }
+        if (request.getIdempotencyKey() == null) {
+            log.error("IdempotencyKey is missing in the PaymentRequest");
+            return false;
+        }
+        if (request.getAmount() <= 0) {
+            log.error("Invalid payment amount: " + request.getAmount());
+            return false;
+        }
+        // Additional validations can be added here
+        return true;
     }
 }
