@@ -65,6 +65,38 @@ WebhookService webhookService = new WebhookService();
 webhookService.emitEvent(event);
 ```
 
+## SDK Usage Examples
+
+### Example 1: Processing a Payment
+```java
+PaymentService paymentService = new PaymentService();
+PaymentRequest paymentRequest = new PaymentRequest(100.00, "USD", "credit_card");
+PaymentResponse response = paymentService.processPayment(paymentRequest);
+System.out.println("Payment Status: " + response.getStatus());
+```
+
+### Example 2: Starting a Transaction
+```java
+TransactionEngine transactionEngine = new TransactionEngine();
+Transaction transaction = transactionEngine.startTransaction();
+System.out.println("Transaction ID: " + transaction.getId());
+```
+
+### Example 3: Handling Idempotency
+```java
+IdempotencyHandler idempotencyHandler = new IdempotencyHandler();
+idempotencyHandler.handleRequest(request);
+System.out.println("Request processed without duplication.");
+```
+
+### Example 4: Emitting a Webhook Event
+```java
+WebhookService webhookService = new WebhookService();
+Event event = new Event("payment_success", transaction);
+webhookService.emitEvent(event);
+System.out.println("Webhook event emitted successfully.");
+```
+
 ## API Endpoints
 ### POST /payments
 - **Description**: Initiates a payment transaction.
