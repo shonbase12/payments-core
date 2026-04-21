@@ -7,6 +7,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 public class TransactionEngine {
@@ -21,7 +22,6 @@ public class TransactionEngine {
 
     public PaymentResult execute(PaymentRequest request) {
         String cacheKey = request.getId();
-        // Check cache first
         PaymentResult cachedResult = cache.getIfPresent(cacheKey);
         if (cachedResult != null) {
             return cachedResult;
@@ -32,7 +32,6 @@ public class TransactionEngine {
             String processorRef = callProcessor(request);
             state = TransactionState.COMPLETED;
             PaymentResult result = PaymentResult.success(processorRef);
-            // Cache the successful result
             cache.put(cacheKey, result);
             return result;
         } catch (PaymentException e) {
@@ -42,7 +41,7 @@ public class TransactionEngine {
     }
 
     public List<PaymentResult> executeBatch(List<PaymentRequest> requests) {
-        return requests.stream()
+        return requests.parallelStream() // Use parallel stream for concurrent processing
             .map(this::execute)
             .toList();
     }
