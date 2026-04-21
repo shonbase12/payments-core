@@ -17,4 +17,30 @@ To set up the Payments Core library, run the following commands:
 ```
 
 ## Usage
+### PaymentService
+```java
+PaymentService paymentService = new PaymentService();
+PaymentResponse response = paymentService.processPayment(paymentRequest);
+```
+### TransactionEngine
+```java
+TransactionEngine transactionEngine = new TransactionEngine();
+Transaction transaction = transactionEngine.startTransaction();
+```
+### IdempotencyHandler
+```java
+IdempotencyHandler idempotencyHandler = new IdempotencyHandler();
+idempotencyHandler.handleRequest(request);
+```
+### WebhookService
+```java
+WebhookService webhookService = new WebhookService();
+webhookService.emitEvent(event);
+```
+
+## API Endpoints
+- **POST /payments**: Initiates a payment transaction.
+- **GET /transactions/{id}**: Retrieves the status of a transaction.
+- **POST /webhooks**: Receives webhook events from the payment gateway.
+
 Refer to the individual component classes for specific usage instructions.
