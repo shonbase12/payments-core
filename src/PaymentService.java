@@ -57,11 +57,11 @@ public class PaymentService {
             log.error("PaymentRequest is null");
             return false;
         }
-        if (request.getIdempotencyKey() == null) {
-            log.error("IdempotencyKey is missing in the PaymentRequest");
+        if (request.getIdempotencyKey() == null || !request.getIdempotencyKey().matches("^[a-zA-Z0-9]{10,}$")) {
+            log.error("IdempotencyKey is missing or invalid in the PaymentRequest");
             return false;
         }
-        if (request.getAmount() <= 0) {
+        if (request.getAmount() <= 0 || request.getAmount() > 10000) { // Assuming 10,000 as the max limit
             log.error("Invalid payment amount: " + request.getAmount());
             return false;
         }
