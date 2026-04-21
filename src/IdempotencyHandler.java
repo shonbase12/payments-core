@@ -1,17 +1,34 @@
 package com.novapay.payments.idempotency;
 
 import com.novapay.payments.model.PaymentResult;
-import java.util.concurrent.ConcurrentHashMap;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
 
-// TODO: replace with Redis-backed store for multi-instance support
 public class IdempotencyHandler {
-    private final ConcurrentHashMap<String, PaymentResult> store = new ConcurrentHashMap<>();
+    private final JedisPool jedisPool;
+
+    public IdempotencyHandler(JedisPool jedisPool) {
+        this.jedisPool = jedisPool;
+    }
 
     public PaymentResult get(String key) {
-        return store.get(key);
+        try (Jedis jedis = jedisPool.getResource()) {
+            String result = jedis.get(key);
+            return result != null ? deserialize(result) : null;
+        }
     }
 
     public void store(String key, PaymentResult result) {
-        store.put(key, result);
+        try (Jedis jedis = jedisPool.getResource()) {
+            jedis.setex(key, 3600, serialize(result)); // Set with 1 hour TTL
+        }
+    }
+
+    private String serialize(PaymentResult result) {
+        // Implement serialization logic here
+    }
+
+    private PaymentResult deserialize(String data) {
+        // Implement deserialization logic here
     }
 }
