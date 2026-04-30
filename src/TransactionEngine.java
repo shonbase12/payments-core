@@ -29,6 +29,8 @@ public class TransactionEngine {
         // First check the cache without locking
         PaymentResult cachedResult = cache.getIfPresent(cacheKey);
         if (cachedResult != null) {
+            log.debug("Cache hit for transaction",
+                      kv("transactionId", cacheKey));
             return cachedResult;
         }
 
@@ -37,24 +39,34 @@ public class TransactionEngine {
         try {
             cachedResult = cache.getIfPresent(cacheKey);
             if (cachedResult != null) {
+                log.debug("Cache hit after lock for transaction",
+                          kv("transactionId", cacheKey));
                 return cachedResult;
             }
         } finally {
             lock.unlock();
         }
 
-        // Perform the external call without holding the lock
         TransactionState state = TransactionState.PENDING;
         try {
+            log.info("Starting transaction processing",
+                     kv("transactionId", cacheKey),
+                     kv("state", state));
             state = TransactionState.PROCESSING;
             String processorRef = callProcessor(request);
             state = TransactionState.COMPLETED;
+            log.info("Transaction completed successfully",
+                     kv("transactionId", cacheKey),
+                     kv("state", state),
+                     kv("processorRef", processorRef));
+
             PaymentResult result = PaymentResult.success(processorRef);
 
-            // Re-acquire the lock briefly to update the cache
             lock.lock();
             try {
                 cache.put(cacheKey, result);
+                log.debug("Cached transaction result",
+                          kv("transactionId", cacheKey));
             } finally {
                 lock.unlock();
             }
@@ -62,27 +74,31 @@ public class TransactionEngine {
             return result;
         } catch (PaymentException e) {
             state = TransactionState.FAILED;
-            log.error("PaymentException during processing: " + e.getMessage());
+            log.error("PaymentException during processing",
+                      kv("transactionId", cacheKey),
+                      kv("state", state),
+                      kv("error", e.getMessage()));
             throw e;
         } catch (Exception e) {
             state = TransactionState.FAILED;
-            log.error("Unexpected exception during processing: " + e.getMessage(), e);
+            log.error("Unexpected exception during processing",
+                      kv("transactionId", cacheKey),
+                      kv("state", state),
+                      kv("error", e.getMessage()),
+                      e);
             throw new PaymentException("Transaction processing failed", "PROCESSOR_ERROR");
         }
     }
 
     public List<PaymentResult> executeBatch(List<PaymentRequest> requests) {
-        return requests.parallelStream() // Use parallel stream for concurrent processing
+        return requests.parallelStream()
             .map(this::execute)
             .toList();
     }
 
     private String callProcessor(PaymentRequest request) {
-        // Simulated processor integration
         try {
-            // Simulate processing delay
             Thread.sleep(100);
-            // Simulate success response with a mock reference
             return "PROC_REF_" + request.getId();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -90,5 +106,14 @@ public class TransactionEngine {
         } catch (Exception e) {
             throw new PaymentException("Processor error: " + e.getMessage(), "PROCESSOR_ERROR");
         }
+    }
+
+    private Object kv(String key, Object value) {
+        return new Object() {
+            @Override
+            public String toString() {
+                return key + "=" + value;
+            }
+        };
     }
 }
