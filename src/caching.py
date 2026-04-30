@@ -1,10 +1,14 @@
 import redis
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Connect to Redis
 try:
     cache = redis.StrictRedis(host='localhost', port=6379, db=0)
 except redis.ConnectionError as e:
-    print(f"Failed to connect to Redis: {e}")
+    logging.error(f"Failed to connect to Redis: {e}")
     cache = None
 
 # Failure Modes of get_transaction function:
@@ -36,6 +40,7 @@ except redis.ConnectionError as e:
 def get_transaction(user_id):
     if not cache:
         # Redis not available, fallback to DB fetch
+        logging.error(f"Redis cache unavailable, fetching transaction {user_id} directly from DB.")
         return fetch_transaction_from_db(user_id)
 
     try:
@@ -44,7 +49,7 @@ def get_transaction(user_id):
         if cached_transaction:
             return cached_transaction  # Return cached transaction
     except redis.RedisError as e:
-        print(f"Redis error during get: {e}")
+        logging.error(f"Redis error during get operation for transaction {user_id}: {e}")
 
     # Fetch from the database if not cached or Redis failed
     transaction = fetch_transaction_from_db(user_id)
@@ -52,6 +57,6 @@ def get_transaction(user_id):
     try:
         cache.set(f"transaction:{user_id}", transaction)  # Cache the transaction
     except redis.RedisError as e:
-        print(f"Redis error during set: {e}")
+        logging.error(f"Redis error during set operation for transaction {user_id}: {e}")
 
     return transaction
