@@ -7,6 +7,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * Service to process payments.
+ * 
+ * Note: The validation rules for PaymentRequest have been made stricter in this version.
+ * Specifically, the currency code must be a 3-letter uppercase string, and idempotency keys
+ * require at least 10 alphanumeric characters.
+ * 
+ * This change may reject requests that were previously accepted.
+ * Clients should review their request payloads accordingly.
+ */
 public class PaymentService {
 
     private final TransactionEngine transactionEngine;
@@ -40,8 +50,31 @@ public class PaymentService {
         try {
             result = transactionEngine.execute(request);
             idempotencyHandler.store(request.getIdempotencyKey(), result);
-            // Emit webhook asynchronously
-            CompletableFuture.runAsync(() -> webhookService.emit("payment.completed", result));
+            // Emit webhook asynchronously with retry logic
+            CompletableFuture.runAsync(() -> {
+                int maxRetries = 3;
+                int attempt = 0;
+                boolean success = false;
+                while (attempt < maxRetries && !success) {
+                    try {
+                        webhookService.emit("payment.completed", result);
+                        success = true;
+                    } catch (Exception e) {
+                        attempt++;
+                        log.error("Webhook emission failed on attempt " + attempt + ": " + e.getMessage());
+                        try {
+                            Thread.sleep(1000 * attempt); // Exponential backoff
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+                }
+                if (!success) {
+                    log.error("Failed to emit webhook after " + maxRetries + " attempts for request ID: " + request.getIdempotencyKey());
+                    // Consider alerting or dead-letter queue for failed webhook emission
+                }
+            });
             return result;
         } catch (TransactionException e) {
             log.error("Transaction failed: " + e.getMessage());
@@ -59,10 +92,16 @@ public class PaymentService {
         }
         if (request.getIdempotencyKey() == null || !request.getIdempotencyKey().matches("^[a-zA-Z0-9]{10,}$")) {
             log.error("IdempotencyKey is missing or invalid in the PaymentRequest");
+            // Consider stricter validation or length limits
             return false;
         }
-        if (request.getAmount() <= 0 || request.getAmount() > 10000) { // Assuming 10,000 as the max limit
+        if (request.getAmount() <= 0 || request.getAmount() > 10000) {
             log.error("Invalid payment amount: " + request.getAmount());
+            return false;
+        }
+        if (request.getCurrency() == null || !request.getCurrency().matches("^[A-Z]{3}$")) {
+            log.error("Invalid or missing currency: " + request.getCurrency());
+            // Consider validating against a whitelist of supported currencies
             return false;
         }
         // Additional validations can be added here
