@@ -22,27 +22,44 @@ public class TransactionEngine {
 
     public PaymentResult execute(PaymentRequest request) {
         String cacheKey = request.getId();
-        // Lock around critical section to ensure thread safety
+
+        // First check the cache without locking
+        PaymentResult cachedResult = cache.getIfPresent(cacheKey);
+        if (cachedResult != null) {
+            return cachedResult;
+        }
+
+        // Cache miss, acquire lock and double-check
         lock.lock();
         try {
-            PaymentResult cachedResult = cache.getIfPresent(cacheKey);
+            cachedResult = cache.getIfPresent(cacheKey);
             if (cachedResult != null) {
                 return cachedResult;
             }
-            TransactionState state = TransactionState.PENDING;
-            try {
-                state = TransactionState.PROCESSING;
-                String processorRef = callProcessor(request);
-                state = TransactionState.COMPLETED;
-                PaymentResult result = PaymentResult.success(processorRef);
-                cache.put(cacheKey, result);
-                return result;
-            } catch (PaymentException e) {
-                state = TransactionState.FAILED;
-                throw e;
-            }
         } finally {
             lock.unlock();
+        }
+
+        // Perform the external call without holding the lock
+        TransactionState state = TransactionState.PENDING;
+        try {
+            state = TransactionState.PROCESSING;
+            String processorRef = callProcessor(request);
+            state = TransactionState.COMPLETED;
+            PaymentResult result = PaymentResult.success(processorRef);
+
+            // Re-acquire the lock briefly to update the cache
+            lock.lock();
+            try {
+                cache.put(cacheKey, result);
+            } finally {
+                lock.unlock();
+            }
+
+            return result;
+        } catch (PaymentException e) {
+            state = TransactionState.FAILED;
+            throw e;
         }
     }
 
