@@ -7,6 +7,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * Service to process payments.
+ * 
+ * Note: The validation rules for PaymentRequest have been made stricter in this version.
+ * Specifically, the currency code must be a 3-letter uppercase string, and idempotency keys
+ * require at least 10 alphanumeric characters.
+ * 
+ * This change may reject requests that were previously accepted.
+ * Clients should review their request payloads accordingly.
+ */
 public class PaymentService {
 
     private final TransactionEngine transactionEngine;
