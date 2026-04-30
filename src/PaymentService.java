@@ -23,16 +23,15 @@ public class PaymentService {
     }
 
     public PaymentResult processPayment(PaymentRequest request) {
-        // Validate the payment request
         if (!isValidPaymentRequest(request)) {
-            log.error("Invalid payment request for ID: " + (request != null ? request.getIdempotencyKey() : "null"));
+            log.error("Invalid payment request for ID: {}", request != null ? request.getIdempotencyKey() : "null");
             throw new InvalidPaymentRequestException("Invalid payment request");
         }
 
-        log.info("Processing payment for request ID: " + request.getIdempotencyKey());
+        log.info("Processing payment for request ID: {}", request.getIdempotencyKey());
         PaymentResult cached = idempotencyHandler.get(request.getIdempotencyKey());
         if (cached != null) {
-            log.info("Returning cached result for request ID: " + request.getIdempotencyKey());
+            log.info("Returning cached result for request ID: {}", request.getIdempotencyKey());
             return cached;
         }
 
@@ -40,14 +39,13 @@ public class PaymentService {
         try {
             result = transactionEngine.execute(request);
             idempotencyHandler.store(request.getIdempotencyKey(), result);
-            // Emit webhook asynchronously
             CompletableFuture.runAsync(() -> webhookService.emit("payment.completed", result));
             return result;
         } catch (TransactionException e) {
-            log.error("Transaction failed: " + e.getMessage());
+            log.error("Transaction failed for request ID: {}. Error: {}", request.getIdempotencyKey(), e.getMessage(), e);
             throw new PaymentProcessingException("Transaction failed", e);
         } catch (Exception e) {
-            log.error("An error occurred while processing payment: " + e.getMessage());
+            log.error("Unexpected error occurred while processing payment for request ID: {}. Error: {}", request.getIdempotencyKey(), e.getMessage(), e);
             throw new PaymentProcessingException("An unexpected error occurred", e);
         }
     }
@@ -61,11 +59,10 @@ public class PaymentService {
             log.error("IdempotencyKey is missing or invalid in the PaymentRequest");
             return false;
         }
-        if (request.getAmount() <= 0 || request.getAmount() > 10000) { // Assuming 10,000 as the max limit
-            log.error("Invalid payment amount: " + request.getAmount());
+        if (request.getAmount() <= 0 || request.getAmount() > 10000) {
+            log.error("Invalid payment amount: {}", request.getAmount());
             return false;
         }
-        // Additional validations can be added here
         return true;
     }
 }
