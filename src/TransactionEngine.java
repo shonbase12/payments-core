@@ -6,12 +6,12 @@ import com.novapay.payments.model.TransactionState;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.TimeUnit;
 
 public class TransactionEngine {
     private final Cache<String, PaymentResult> cache;
+    private final ReentrantLock lock = new ReentrantLock();
 
     public TransactionEngine() {
         this.cache = Caffeine.newBuilder()
@@ -22,21 +22,27 @@ public class TransactionEngine {
 
     public PaymentResult execute(PaymentRequest request) {
         String cacheKey = request.getId();
-        PaymentResult cachedResult = cache.getIfPresent(cacheKey);
-        if (cachedResult != null) {
-            return cachedResult;
-        }
-        TransactionState state = TransactionState.PENDING;
+        // Lock around critical section to ensure thread safety
+        lock.lock();
         try {
-            state = TransactionState.PROCESSING;
-            String processorRef = callProcessor(request);
-            state = TransactionState.COMPLETED;
-            PaymentResult result = PaymentResult.success(processorRef);
-            cache.put(cacheKey, result);
-            return result;
-        } catch (PaymentException e) {
-            state = TransactionState.FAILED;
-            throw e;
+            PaymentResult cachedResult = cache.getIfPresent(cacheKey);
+            if (cachedResult != null) {
+                return cachedResult;
+            }
+            TransactionState state = TransactionState.PENDING;
+            try {
+                state = TransactionState.PROCESSING;
+                String processorRef = callProcessor(request);
+                state = TransactionState.COMPLETED;
+                PaymentResult result = PaymentResult.success(processorRef);
+                cache.put(cacheKey, result);
+                return result;
+            } catch (PaymentException e) {
+                state = TransactionState.FAILED;
+                throw e;
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
