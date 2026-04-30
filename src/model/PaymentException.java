@@ -1,6 +1,9 @@
 package com.novapay.payments.model;
 
-public class PaymentException extends RuntimeException {
+import java.io.Serializable;
+
+public class PaymentException extends RuntimeException implements Serializable {
+    private static final long serialVersionUID = 1L;
     private final String errorCode;
 
     public PaymentException(String message, String errorCode) {
@@ -8,5 +11,27 @@ public class PaymentException extends RuntimeException {
         this.errorCode = errorCode;
     }
 
-    public String getErrorCode() { return errorCode; }
+    public PaymentException(String message, String errorCode, Throwable cause) {
+        super(message, cause);
+        this.errorCode = errorCode;
+    }
+
+    public PaymentException(String message) {
+        super(message);
+        this.errorCode = null;
+    }
+
+    public PaymentException(String message, Throwable cause) {
+        super(message, cause);
+        this.errorCode = null;
+    }
+
+    public String getErrorCode() {
+        return errorCode;
+    }
+
+    @Override
+    public String toString() {
+        return super.toString() + (errorCode != null ? " [errorCode=" + errorCode + "]" : "");
+    }
 }
