@@ -40,8 +40,30 @@ public class PaymentService {
         try {
             result = transactionEngine.execute(request);
             idempotencyHandler.store(request.getIdempotencyKey(), result);
-            // Emit webhook asynchronously
-            CompletableFuture.runAsync(() -> webhookService.emit("payment.completed", result));
+            // Emit webhook asynchronously with retry logic
+            CompletableFuture.runAsync(() -> {
+                int maxRetries = 3;
+                int attempt = 0;
+                boolean success = false;
+                while (attempt < maxRetries && !success) {
+                    try {
+                        webhookService.emit("payment.completed", result);
+                        success = true;
+                    } catch (Exception e) {
+                        attempt++;
+                        log.error("Webhook emission failed on attempt " + attempt + ": " + e.getMessage());
+                        try {
+                            Thread.sleep(1000 * attempt); // Exponential backoff
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+                }
+                if (!success) {
+                    log.error("Failed to emit webhook after " + maxRetries + " attempts for request ID: " + request.getIdempotencyKey());
+                }
+            });
             return result;
         } catch (TransactionException e) {
             log.error("Transaction failed: " + e.getMessage());
