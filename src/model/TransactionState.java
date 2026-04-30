@@ -4,6 +4,10 @@ public enum TransactionState {
     PENDING,
     PROCESSING,
     COMPLETED,
-    FAILED;
-    // Add additional states as necessary
+    FAILED,
+    CANCELLED,
+    REVERSED,
+    ON_HOLD,
+    EXPIRED,
+    FAILED_VALIDATION;
 }
