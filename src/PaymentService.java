@@ -40,8 +40,14 @@ public class PaymentService {
         try {
             result = transactionEngine.execute(request);
             idempotencyHandler.store(request.getIdempotencyKey(), result);
-            // Emit webhook asynchronously
-            CompletableFuture.runAsync(() -> webhookService.emit("payment.completed", result));
+            // Emit webhook asynchronously with exception handling
+            CompletableFuture.runAsync(() -> {
+                try {
+                    webhookService.emit("payment.completed", result);
+                } catch (Exception ex) {
+                    log.error("Failed to emit webhook for payment ID: " + request.getIdempotencyKey(), ex);
+                }
+            });
             return result;
         } catch (TransactionException e) {
             log.error("Transaction failed: " + e.getMessage());
@@ -61,8 +67,12 @@ public class PaymentService {
             log.error("IdempotencyKey is missing or invalid in the PaymentRequest");
             return false;
         }
-        if (request.getAmount() <= 0 || request.getAmount() > 10000) { // Assuming 10,000 as the max limit
+        if (request.getAmount() <= 0 || request.getAmount() > 10000) {
             log.error("Invalid payment amount: " + request.getAmount());
+            return false;
+        }
+        if (request.getCurrency() == null || !request.getCurrency().matches("^[A-Z]{3}$")) {
+            log.error("Invalid or missing currency: " + request.getCurrency());
             return false;
         }
         // Additional validations can be added here
