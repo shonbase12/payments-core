@@ -8,10 +8,13 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class TransactionEngine {
     private final Cache<String, PaymentResult> cache;
     private final ReentrantLock lock = new ReentrantLock();
+    private static final Logger log = LoggerFactory.getLogger(TransactionEngine.class);
 
     public TransactionEngine() {
         this.cache = Caffeine.newBuilder()
@@ -59,7 +62,12 @@ public class TransactionEngine {
             return result;
         } catch (PaymentException e) {
             state = TransactionState.FAILED;
+            log.error("PaymentException during processing: " + e.getMessage());
             throw e;
+        } catch (Exception e) {
+            state = TransactionState.FAILED;
+            log.error("Unexpected exception during processing: " + e.getMessage(), e);
+            throw new PaymentException("Transaction processing failed", "PROCESSOR_ERROR");
         }
     }
 
@@ -70,6 +78,17 @@ public class TransactionEngine {
     }
 
     private String callProcessor(PaymentRequest request) {
-        throw new UnsupportedOperationException("Processor not configured");
+        // Simulated processor integration
+        try {
+            // Simulate processing delay
+            Thread.sleep(100);
+            // Simulate success response with a mock reference
+            return "PROC_REF_" + request.getId();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new PaymentException("Processor interrupted", "PROCESSOR_INTERRUPTED");
+        } catch (Exception e) {
+            throw new PaymentException("Processor error: " + e.getMessage(), "PROCESSOR_ERROR");
+        }
     }
 }
