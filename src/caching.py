@@ -1,62 +1,111 @@
 import redis
 import logging
+import threading
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Connect to Redis
-try:
-    cache = redis.StrictRedis(host='localhost', port=6379, db=0)
-except redis.ConnectionError as e:
-    logging.error(f"Failed to connect to Redis: {e}")
-    cache = None
+class RedisCache:
+    def __init__(self, host='localhost', port=6379, db=0, max_retries=5, retry_delay=5):
+        self.host = host
+        self.port = port
+        self.db = db
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        self.cache = None
+        self.lock = threading.Lock()
+        self.circuit_open = False
+        self.failure_count = 0
+        self.failure_threshold = 3
+        self._connect_with_retry()
 
-# Failure Modes of get_transaction function:
-# 
-# 1. Redis Connection Failure at Initialization:
-#    - When the module loads, it attempts to establish a connection to Redis.
-#    - If the connection fails (e.g., Redis server down, network issues), a redis.ConnectionError is caught.
-#    - The cache variable is set to None, signaling Redis is unavailable.
-#    - Impact: All calls to get_transaction will bypass Redis caching and directly fetch from the database, potentially increasing database load and latency.
-# 
-# 2. Redis Get Operation Failure:
-#    - During the retrieval of a cached transaction, cache.get may raise a redis.RedisError due to transient Redis issues or command failures.
-#    - The exception is caught and logged, and the function continues to fetch the transaction from the database.
-#    - Impact: Cache misses or degraded cache performance, leading to increased database queries.
-# 
-# 3. Redis Set Operation Failure:
-#    - After fetching from the database, the function attempts to cache the transaction with cache.set.
-#    - If a redis.RedisError occurs (e.g., Redis out of memory, network issues), the error is caught and logged.
-#    - Impact: The transaction will not be cached, reducing cache hit rates and potentially affecting performance on subsequent calls.
-# 
-# 4. Cache Unavailability Fallback:
-#    - If Redis is entirely unavailable (cache is None), the function always falls back to fetching transactions from the database.
-#    - There is no retry mechanism or circuit breaker to restore Redis usage once it becomes available again within the same runtime.
-#    - Impact: Persistent Redis downtime causes sustained higher database load until the service restarts or the connection is re-established externally.
-# 
-# Summary:
-# The function is resilient to Redis failures by gracefully degrading to direct database access, ensuring availability of transaction data. However, prolonged Redis issues can degrade overall system performance due to increased database load and lack of automatic Redis connection recovery within the function.
+        # Start a background thread to monitor Redis health and reconnect
+        self.monitor_thread = threading.Thread(target=self._monitor_redis, daemon=True)
+        self.monitor_thread.start()
+
+    def _connect_with_retry(self):
+        retries = 0
+        while retries < self.max_retries:
+            try:
+                self.cache = redis.StrictRedis(host=self.host, port=self.port, db=self.db)
+                # Test connection
+                self.cache.ping()
+                self.circuit_open = False
+                self.failure_count = 0
+                logging.error(f"Connected to Redis at {self.host}:{self.port}")
+                return
+            except redis.ConnectionError as e:
+                retries += 1
+                logging.error(f"Failed to connect to Redis (attempt {retries}): {e}")
+                time.sleep(self.retry_delay)
+        self.cache = None
+        self.circuit_open = True
+
+    def _monitor_redis(self):
+        while True:
+            if self.circuit_open:
+                try:
+                    temp_cache = redis.StrictRedis(host=self.host, port=self.port, db=self.db)
+                    temp_cache.ping()
+                    with self.lock:
+                        self.cache = temp_cache
+                        self.circuit_open = False
+                        self.failure_count = 0
+                    logging.error("Redis connection restored, circuit closed.")
+                except redis.ConnectionError:
+                    pass
+            time.sleep(10)  # Check every 10 seconds
+
+    def get(self, key):
+        if self.circuit_open or not self.cache:
+            raise redis.ConnectionError("Redis circuit is open or cache is not available.")
+        try:
+            return self.cache.get(key)
+        except redis.RedisError as e:
+            self._record_failure()
+            raise e
+
+    def set(self, key, value):
+        if self.circuit_open or not self.cache:
+            raise redis.ConnectionError("Redis circuit is open or cache is not available.")
+        try:
+            return self.cache.set(key, value)
+        except redis.RedisError as e:
+            self._record_failure()
+            raise e
+
+    def _record_failure(self):
+        with self.lock:
+            self.failure_count += 1
+            if self.failure_count >= self.failure_threshold:
+                self.circuit_open = True
+                logging.error("Redis circuit opened due to repeated failures.")
+
+
+redis_cache = RedisCache()
+
 
 def get_transaction(user_id):
-    if not cache:
-        # Redis not available, fallback to DB fetch
-        logging.error(f"Redis cache unavailable, fetching transaction {user_id} directly from DB.")
-        return fetch_transaction_from_db(user_id)
-
     try:
-        # Check if the transaction is in cache
-        cached_transaction = cache.get(f"transaction:{user_id}")
+        cached_transaction = redis_cache.get(f"transaction:{user_id}")
         if cached_transaction:
-            return cached_transaction  # Return cached transaction
-    except redis.RedisError as e:
+            return cached_transaction
+    except (redis.ConnectionError, redis.RedisError) as e:
         logging.error(f"Redis error during get operation for transaction {user_id}: {e}")
 
-    # Fetch from the database if not cached or Redis failed
     transaction = fetch_transaction_from_db(user_id)
 
     try:
-        cache.set(f"transaction:{user_id}", transaction)  # Cache the transaction
-    except redis.RedisError as e:
+        redis_cache.set(f"transaction:{user_id}", transaction)
+    except (redis.ConnectionError, redis.RedisError) as e:
         logging.error(f"Redis error during set operation for transaction {user_id}: {e}")
 
     return transaction
+
+# Placeholder function for database fetch
+# Replace with actual DB access implementation
+
+def fetch_transaction_from_db(user_id):
+    # Simulate DB fetch
+    return f"transaction_data_for_{user_id}"
