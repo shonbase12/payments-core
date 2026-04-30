@@ -62,6 +62,7 @@ public class PaymentService {
                 }
                 if (!success) {
                     log.error("Failed to emit webhook after " + maxRetries + " attempts for request ID: " + request.getIdempotencyKey());
+                    // Consider alerting or dead-letter queue for failed webhook emission
                 }
             });
             return result;
@@ -81,6 +82,7 @@ public class PaymentService {
         }
         if (request.getIdempotencyKey() == null || !request.getIdempotencyKey().matches("^[a-zA-Z0-9]{10,}$")) {
             log.error("IdempotencyKey is missing or invalid in the PaymentRequest");
+            // Consider stricter validation or length limits
             return false;
         }
         if (request.getAmount() <= 0 || request.getAmount() > 10000) {
@@ -89,6 +91,7 @@ public class PaymentService {
         }
         if (request.getCurrency() == null || !request.getCurrency().matches("^[A-Z]{3}$")) {
             log.error("Invalid or missing currency: " + request.getCurrency());
+            // Consider validating against a whitelist of supported currencies
             return false;
         }
         // Additional validations can be added here
