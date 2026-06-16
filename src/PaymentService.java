@@ -3,6 +3,9 @@ public boolean isValidPaymentRequest(PaymentRequest request) {
     if (request == null || request.getIdempotencyKey() == null) {
         return false;
     }
-    // Add more validation checks as needed
+    if (request.getAmount() <= 0) {
+        throw new IllegalArgumentException("Amount must be greater than zero.");
+    }
+    // Additional validation checks as needed
     return true;
 }
